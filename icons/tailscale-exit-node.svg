@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Tailscale logo (simplified, maximized) -->
+  <path d="M32 4 L56 32 L32 60 L8 32 Z" fill="#bbdefb" stroke="#42a5f5" stroke-width="2" stroke-linejoin="round"/>
+  
+  <!-- Connected indicator (transparent background) -->
+  <g transform="translate(32, 32)">
+    <circle cx="0" cy="0" r="20" fill="none" stroke="#29b6f6" stroke-width="3"/>
+    
+    <!-- Globe/Exit node indicator (maximized) -->
+    <g transform="scale(1.3)">
+      <circle cx="0" cy="0" r="10" fill="none" stroke="#29b6f6" stroke-width="1.8"/>
+      <!-- Longitude lines -->
+      <ellipse cx="0" cy="0" rx="10" ry="5" fill="none" stroke="#29b6f6" stroke-width="1.2"/>
+      <ellipse cx="0" cy="0" rx="10" ry="5" fill="none" stroke="#29b6f6" stroke-width="1.2" transform="rotate(60)"/>
+      <ellipse cx="0" cy="0" rx="10" ry="5" fill="none" stroke="#29b6f6" stroke-width="1.2" transform="rotate(120)"/>
+      <!-- Straight latitude line -->
+      <line x1="-10" y1="0" x2="10" y2="0" stroke="#29b6f6" stroke-width="1.2"/>
+    </g>
+    
+    <!-- Arrow pointing to exit (enhanced and lengthened) -->
+    <path d="M-20 11 L-9 11 L-9 17 L10 5 L-9 -7 L-9 -1 L-20 -1 Z" fill="#ff9800" stroke="#e65100" stroke-width="1" stroke-linejoin="round"/>
+  </g>
+</svg>

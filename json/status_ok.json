@@ -1,0 +1,340 @@
+{
+  "Version": "1.80.3-tb107adf2b-g9497b39a5",
+  "TUN": true,
+  "BackendState": "Running",
+  "HaveNodeKey": true,
+  "AuthURL": "",
+  "TailscaleIPs": [
+    "100.98.76.54",
+    "fd7a:115c:a1e0::4321:5678"
+  ],
+  "Self": {
+    "ID": "xxxxxxXXxxxx11CNTRL",
+    "PublicKey": "nodekey:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "HostName": "device1",
+    "DNSName": "device1.tailxxxxx.ts.net.",
+    "OS": "linux",
+    "UserID": 1000000000000001,
+    "TailscaleIPs": [
+      "100.98.76.54",
+      "fd7a:115c:a1e0::4321:5678"
+    ],
+    "AllowedIPs": [
+      "100.98.76.54/32",
+      "fd7a:115c:a1e0::4321:5678/128"
+    ],
+    "Addrs": [
+      "123.45.67.89:12345",
+      "123.45.67.89:5432",
+      "[2001:db8:85a3:8d3:1319:8a2e:370:7348]:12345",
+      "123.45.67.89:12345",
+      "123.45.67.89:12345",
+      "192.168.1.25:12345",
+      "192.168.1.105:12345",
+      "[2001:db8:85a3:8d3:1319:8a2e:370:7349]:12345",
+      "[2001:db8:85a3:8d3:1319:8a2e:370:7350]:12345",
+      "[2001:db8:85a3:8d3:1319:8a2e:370:7351]:12345"
+    ],
+    "CurAddr": "",
+    "Relay": "xxx",
+    "RxBytes": 0,
+    "TxBytes": 0,
+    "Created": "2025-03-14T16:52:58.246266088Z",
+    "LastWrite": "0001-01-01T00:00:00Z",
+    "LastSeen": "0001-01-01T00:00:00Z",
+    "LastHandshake": "0001-01-01T00:00:00Z",
+    "Online": true,
+    "ExitNode": false,
+    "ExitNodeOption": false,
+    "Active": false,
+    "PeerAPIURL": [
+      "http://100.98.76.54:42675",
+      "http://[fd7a:115c:a1e0::4321:5678]:60708"
+    ],
+    "Capabilities": [
+      "HTTPS://TAILSCALE.COM/s/DEPRECATED-NODE-CAPS#see-https://github.com/tailscale/tailscale/issues/11508",
+      "https://tailscale.com/cap/file-sharing",
+      "https://tailscale.com/cap/is-admin",
+      "https://tailscale.com/cap/ssh",
+      "https://tailscale.com/cap/tailnet-lock",
+      "probe-udp-lifetime",
+      "ssh-behavior-v1",
+      "ssh-env-vars",
+      "store-appc-routes"
+    ],
+    "CapMap": {
+      "https://tailscale.com/cap/file-sharing": null,
+      "https://tailscale.com/cap/is-admin": null,
+      "https://tailscale.com/cap/ssh": null,
+      "https://tailscale.com/cap/tailnet-lock": null,
+      "probe-udp-lifetime": null,
+      "ssh-behavior-v1": null,
+      "ssh-env-vars": null,
+      "store-appc-routes": null
+    },
+    "InNetworkMap": true,
+    "InMagicSock": false,
+    "InEngine": false
+  },
+  "Health": [
+    "Some peers are advertising routes but --accept-routes is false"
+  ],
+  "MagicDNSSuffix": "tailxxxxx.ts.net",
+  "CurrentTailnet": {
+    "Name": "user1@example.com",
+    "MagicDNSSuffix": "tailxxxxx.ts.net",
+    "MagicDNSEnabled": true
+  },
+  "CertDomains": null,
+  "Peer": {
+    "nodekey:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": {
+      "ID": "xxxxxxXXxxxx11CNTRL",
+      "PublicKey": "nodekey:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "HostName": "device2",
+      "DNSName": "device2.tailxxxxx.ts.net.",
+      "OS": "linux",
+      "UserID": 1000000000000001,
+      "TailscaleIPs": [
+        "100.83.45.22",
+        "fd7a:115c:a1e0::ce01:45f2"
+      ],
+      "AllowedIPs": [
+        "100.83.45.22/32",
+        "fd7a:115c:a1e0::ce01:45f2/128",
+        "0.0.0.0/0",
+        "::/0"
+      ],
+      "Addrs": null,
+      "CurAddr": "",
+      "Relay": "xxx",
+      "RxBytes": 0,
+      "TxBytes": 0,
+      "Created": "2025-01-31T01:27:25.390257635Z",
+      "LastWrite": "0001-01-01T00:00:00Z",
+      "LastSeen": "0001-01-01T00:00:00Z",
+      "LastHandshake": "0001-01-01T00:00:00Z",
+      "Online": true,
+      "ExitNode": false,
+      "ExitNodeOption": true,
+      "Active": false,
+      "PeerAPIURL": [
+        "http://100.83.45.22:44569",
+        "http://[fd7a:115c:a1e0::ce01:45f2]:58449"
+      ],
+      "CapMap": {
+        "suggest-exit-node": null
+      },
+      "InNetworkMap": true,
+      "InMagicSock": true,
+      "InEngine": false
+    },
+    "nodekey:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": {
+      "ID": "xxxxxxXXxxxx11CNTRL",
+      "PublicKey": "nodekey:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "HostName": "device3",
+      "DNSName": "device3.tailxxxxx.ts.net.",
+      "OS": "linux",
+      "UserID": 1000000000000001,
+      "TailscaleIPs": [
+        "100.106.32.29",
+        "fd7a:115c:a1e0::68aa:32f9"
+      ],
+      "AllowedIPs": [
+        "100.106.32.29/32",
+        "fd7a:115c:a1e0::68aa:32f9/128",
+        "0.0.0.0/0",
+        "::/0"
+      ],
+      "Addrs": null,
+      "CurAddr": "",
+      "Relay": "xxx",
+      "RxBytes": 0,
+      "TxBytes": 0,
+      "Created": "2023-12-04T09:37:50.65803427Z",
+      "LastWrite": "0001-01-01T00:00:00Z",
+      "LastSeen": "0001-01-01T00:00:00Z",
+      "LastHandshake": "0001-01-01T00:00:00Z",
+      "Online": true,
+      "ExitNode": false,
+      "ExitNodeOption": true,
+      "Active": false,
+      "PeerAPIURL": [
+        "http://100.106.32.29:64669",
+        "http://[fd7a:115c:a1e0::68aa:32f9]:60125"
+      ],
+      "CapMap": {
+        "suggest-exit-node": null
+      },
+      "InNetworkMap": true,
+      "InMagicSock": true,
+      "InEngine": false
+    },
+    "nodekey:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": {
+      "ID": "xxxxxxXXxxxx11CNTRL",
+      "PublicKey": "nodekey:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "HostName": "device4",
+      "DNSName": "device4.tailxxxxx.ts.net.",
+      "OS": "macOS",
+      "UserID": 1000000000000002,
+      "TailscaleIPs": [
+        "100.109.8.23",
+        "fd7a:115c:a1e0::eb01:823"
+      ],
+      "AllowedIPs": [
+        "100.109.8.23/32",
+        "fd7a:115c:a1e0::eb01:823/128"
+      ],
+      "Addrs": null,
+      "CurAddr": "",
+      "Relay": "xxx",
+      "RxBytes": 0,
+      "TxBytes": 0,
+      "Created": "2025-02-03T19:50:45.743315792Z",
+      "LastWrite": "0001-01-01T00:00:00Z",
+      "LastSeen": "2025-03-09T12:42:05.1Z",
+      "LastHandshake": "0001-01-01T00:00:00Z",
+      "Online": false,
+      "ExitNode": false,
+      "ExitNodeOption": false,
+      "Active": false,
+      "PeerAPIURL": [
+        "http://100.109.8.23:40688",
+        "http://[fd7a:115c:a1e0::eb01:823]:39970"
+      ],
+      "InNetworkMap": true,
+      "InMagicSock": true,
+      "InEngine": false
+    },
+    "nodekey:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": {
+      "ID": "xxxxxxXCNTRL",
+      "PublicKey": "nodekey:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "HostName": "device5",
+      "DNSName": "device5.tailxxxxx.ts.net.",
+      "OS": "android",
+      "UserID": 1000000000000001,
+      "TailscaleIPs": [
+        "100.71.45.98",
+        "fd7a:115c:a1e0:ab12:4843:cd96:6247:ab62"
+      ],
+      "AllowedIPs": [
+        "100.71.45.98/32",
+        "fd7a:115c:a1e0:ab12:4843:cd96:6247:ab62/128"
+      ],
+      "Addrs": null,
+      "CurAddr": "",
+      "Relay": "xxx",
+      "RxBytes": 0,
+      "TxBytes": 0,
+      "Created": "2023-03-31T12:57:02.211820379Z",
+      "LastWrite": "0001-01-01T00:00:00Z",
+      "LastSeen": "2025-03-15T02:05:10.1Z",
+      "LastHandshake": "0001-01-01T00:00:00Z",
+      "Online": false,
+      "ExitNode": false,
+      "ExitNodeOption": false,
+      "Active": false,
+      "PeerAPIURL": [
+        "http://100.71.45.98:1",
+        "http://[fd7a:115c:a1e0:ab12:4843:cd96:6247:ab62]:1"
+      ],
+      "InNetworkMap": true,
+      "InMagicSock": true,
+      "InEngine": false
+    },
+    "nodekey:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": {
+      "ID": "xxxxxxXCNTRL",
+      "PublicKey": "nodekey:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "HostName": "device6",
+      "DNSName": "device6.tailxxxxx.ts.net.",
+      "OS": "linux",
+      "UserID": 1000000000000001,
+      "TailscaleIPs": [
+        "100.111.54.23",
+        "fd7a:115c:a1e0:ab12:4843:cd96:626f:54e7"
+      ],
+      "AllowedIPs": [
+        "100.111.54.23/32",
+        "fd7a:115c:a1e0:ab12:4843:cd96:626f:54e7/128",
+        "192.168.1.0/24"
+      ],
+      "PrimaryRoutes": [
+        "192.168.1.0/24"
+      ],
+      "Addrs": null,
+      "CurAddr": "",
+      "Relay": "xxx",
+      "RxBytes": 0,
+      "TxBytes": 0,
+      "Created": "2023-03-31T12:54:04.098623677Z",
+      "LastWrite": "0001-01-01T00:00:00Z",
+      "LastSeen": "0001-01-01T00:00:00Z",
+      "LastHandshake": "0001-01-01T00:00:00Z",
+      "Online": true,
+      "ExitNode": false,
+      "ExitNodeOption": false,
+      "Active": false,
+      "PeerAPIURL": [
+        "http://100.111.54.23:55137",
+        "http://[fd7a:115c:a1e0:ab12:4843:cd96:626f:54e7]:55137"
+      ],
+      "InNetworkMap": true,
+      "InMagicSock": true,
+      "InEngine": false
+    },
+    "nodekey:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": {
+      "ID": "xxxxxxXCNTRL",
+      "PublicKey": "nodekey:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "HostName": "device7",
+      "DNSName": "device7.tailxxxxx.ts.net.",
+      "OS": "macOS",
+      "UserID": 1000000000000001,
+      "TailscaleIPs": [
+        "100.126.78.48",
+        "fd7a:115c:a1e0:ab12:4843:cd96:627e:78f3"
+      ],
+      "AllowedIPs": [
+        "100.126.78.48/32",
+        "fd7a:115c:a1e0:ab12:4843:cd96:627e:78f3/128"
+      ],
+      "Addrs": null,
+      "CurAddr": "",
+      "Relay": "xxx",
+      "RxBytes": 0,
+      "TxBytes": 0,
+      "Created": "2023-04-10T01:45:34.816720422Z",
+      "LastWrite": "0001-01-01T00:00:00Z",
+      "LastSeen": "2025-03-18T00:50:00.1Z",
+      "LastHandshake": "0001-01-01T00:00:00Z",
+      "Online": false,
+      "ExitNode": false,
+      "ExitNodeOption": false,
+      "Active": false,
+      "PeerAPIURL": [
+        "http://100.126.78.48:57559",
+        "http://[fd7a:115c:a1e0:ab12:4843:cd96:627e:78f3]:57559"
+      ],
+      "InNetworkMap": true,
+      "InMagicSock": true,
+      "InEngine": false
+    }
+  },
+  "User": {
+    "1000000000000001": {
+      "ID": 1000000000000001,
+      "LoginName": "user1@example.com",
+      "DisplayName": "User One",
+      "ProfilePicURL": "https://example.com/profile-pic-placeholder",
+      "Roles": []
+    },
+    "1000000000000002": {
+      "ID": 1000000000000002,
+      "LoginName": "user2@example.com",
+      "DisplayName": "user2",
+      "ProfilePicURL": "",
+      "Roles": []
+    }
+  },
+  "ClientVersion": {
+    "RunningLatest": true
+  }
+}

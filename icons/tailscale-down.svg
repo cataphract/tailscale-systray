@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Tailscale logo (simplified, maximized) -->
+  <path d="M32 4 L56 32 L32 60 L8 32 Z" fill="#e0e0e0" stroke="#bdbdbd" stroke-width="2" stroke-linejoin="round"/>
+  
+  <!-- Disconnected indicator (transparent background) -->
+  <g transform="translate(32, 32)">
+    <circle cx="0" cy="0" r="20" fill="none" stroke="#ef5350" stroke-width="3"/>
+    <line x1="-12" y1="-12" x2="12" y2="12" stroke="#ef5350" stroke-width="4" stroke-linecap="round"/>
+    <line x1="-12" y1="12" x2="12" y2="-12" stroke="#ef5350" stroke-width="4" stroke-linecap="round"/>
+  </g>
+</svg>

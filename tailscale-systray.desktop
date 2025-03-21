@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Tailscale Exit Node Chooser
+Comment=System tray app for selecting Tailscale exit nodes
+Exec=tailscale-systray
+Icon=network-vpn
+Terminal=false
+Categories=Network;Utility;
+StartupNotify=false
+X-GNOME-Autostart-enabled=true
