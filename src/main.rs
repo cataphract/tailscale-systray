@@ -171,6 +171,18 @@ impl Tray for TailscaleTray {
                             }
                             .into(),
                         );
+                    } else if tstatus.backend_state == "NeedsLogin" {
+                        res.push(
+                            StandardItem {
+                                label: "Login".into(),
+                                activate: Box::new(|this: &mut Self| {
+                                    info!("User requested to login to Tailscale");
+                                    this.exec.login();
+                                }),
+                                ..Default::default()
+                            }
+                            .into(),
+                        );
                     } else {
                         res.push(
                             StandardItem {

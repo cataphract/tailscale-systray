@@ -1,0 +1,53 @@
+{
+  "Version": "1.80.3-tb107adf2b-g9497b39a5",
+  "TUN": true,
+  "BackendState": "NeedsLogin",
+  "AuthURL": "",
+  "TailscaleIPs": null,
+  "Self": {
+    "ID": "",
+    "PublicKey": "nodekey:0000000000000000000000000000000000000000000000000000000000000000",
+    "HostName": "device1",
+    "DNSName": "",
+    "OS": "linux",
+    "UserID": 0,
+    "TailscaleIPs": null,
+    "Addrs": [
+      "123.45.67.89:14469",
+      "123.45.67.89:1027",
+      "[2001:db8:85a3:8d3:1319:8a2e:370:7348]:41641",
+      "192.168.1.76:41641",
+      "192.168.1.105:41641",
+      "[2001:db8:85a3:8d3:1319:8a2e:370:7349]:41641",
+      "[2001:db8:85a3:8d3:1319:8a2e:370:7350]:41641",
+      "[2001:db8:85a3:8d3:1319:8a2e:370:7351]:41641"
+    ],
+    "CurAddr": "",
+    "Relay": "xyz",
+    "RxBytes": 0,
+    "TxBytes": 0,
+    "Created": "0001-01-01T00:00:00Z",
+    "LastWrite": "0001-01-01T00:00:00Z",
+    "LastSeen": "0001-01-01T00:00:00Z",
+    "LastHandshake": "0001-01-01T00:00:00Z",
+    "Online": false,
+    "ExitNode": false,
+    "ExitNodeOption": false,
+    "Active": false,
+    "PeerAPIURL": null,
+    "InNetworkMap": false,
+    "InMagicSock": false,
+    "InEngine": false
+  },
+  "Health": [
+    "Tailscale is stopped."
+  ],
+  "MagicDNSSuffix": "",
+  "CurrentTailnet": null,
+  "CertDomains": null,
+  "Peer": null,
+  "User": null,
+  "ClientVersion": {
+    "RunningLatest": true
+  }
+}

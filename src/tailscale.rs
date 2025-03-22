@@ -1,9 +1,12 @@
 use anyhow::{bail, Context};
+use log::{debug, error, info, trace, warn};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     ffi::{OsStr, OsString},
+    io::BufRead,
     path::PathBuf,
+    process::{self, Command, Stdio},
 };
 use users::get_current_username;
 
@@ -14,7 +17,7 @@ pub struct TailscaleStatus {
     #[serde(rename = "TUN")]
     pub tun: bool,
     pub backend_state: String,
-    pub have_node_key: bool,
+    pub have_node_key: Option<bool>,
     #[serde(rename = "AuthURL")]
     pub auth_url: String,
     #[serde(rename = "TailscaleIPs")]
@@ -162,14 +165,14 @@ pub struct TailscalePrefs {
     pub netfilter_kind: String,
     pub drive_shares: Option<Vec<String>>,
     pub allow_single_hosts: bool,
-    pub config: Config,
+    pub config: Option<Config>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "PascalCase")]
 pub struct AutoUpdate {
     pub check: bool,
-    pub apply: bool,
+    pub apply: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -224,8 +227,8 @@ impl TailscaleExec {
         }
     }
 
-    fn command<S: AsRef<OsStr>>(&self, args: &[S]) -> std::process::Command {
-        let mut cmd = std::process::Command::new(&self.cmd);
+    fn command<S: AsRef<OsStr>>(&self, args: &[S]) -> Command {
+        let mut cmd = Command::new(&self.cmd);
         cmd.args(&self.flags).args(args);
         cmd
     }
@@ -259,12 +262,12 @@ impl TailscaleExec {
         self.json_command(&["debug", "prefs"])
     }
 
-    fn retry_with_sudo<S: AsRef<OsStr>>(&self, args: &[S]) -> anyhow::Result<std::process::Output> {
+    fn retry_with_sudo<S: AsRef<OsStr>>(&self, args: &[S]) -> anyhow::Result<process::Output> {
         let mut command = self.command(args);
         let res = command.output()?;
 
         if !res.status.success() && String::from_utf8_lossy(&res.stderr).contains("Access denied") {
-            let mut command = std::process::Command::new("pkexec");
+            let mut command = Command::new("pkexec");
             command.arg(&self.cmd);
             command.args(&self.flags).args(args);
             Ok(command.output()?)
@@ -288,15 +291,21 @@ impl TailscaleExec {
         }
     }
 
+    fn operator_arg() -> Option<OsString> {
+        get_current_username().map(|username| {
+            let mut operator_arg = OsString::from("--operator=");
+            operator_arg.push(username);
+            operator_arg
+        })
+    }
+
     pub fn up_reconf(
         &self,
         exit_node_opt: &ExitNodeOption,
         prefs: &TailscalePrefs,
     ) -> anyhow::Result<()> {
         let mut args: Vec<OsString> = vec!["up".into(), "--reset".into()];
-        if let Some(username) = get_current_username() {
-            let mut operator_arg = OsString::from("--operator=");
-            operator_arg.push(username);
+        if let Some(operator_arg) = Self::operator_arg() {
             args.push(operator_arg);
         }
         if prefs.route_all {
@@ -342,6 +351,82 @@ impl TailscaleExec {
             );
         }
     }
+
+    pub fn login(&self) {
+        let mut cmd = Command::new(&self.cmd);
+        cmd.args(&self.flags).args(["login"]);
+
+        let mut sudo_cmd = Command::new("pkexec");
+        sudo_cmd.arg(&self.cmd).args(&self.flags).arg("login");
+        if let Some(operator_arg) = Self::operator_arg() {
+            sudo_cmd.arg(operator_arg);
+        }
+
+        std::thread::spawn(move || {
+            let mut tried_sudo = false;
+            let mut cmd = &mut cmd;
+
+            loop {
+                debug!("About to spawn {:?}", cmd);
+                cmd.stderr(Stdio::piped());
+
+                let mut child = match cmd.spawn() {
+                    Ok(child) => child,
+                    Err(e) => {
+                        warn!("Failed to start tailscale login: {}", e);
+                        return;
+                    }
+                };
+
+                let stderr = child.stderr.take().unwrap();
+                let mut reader = std::io::BufReader::new(stderr);
+
+                let mut line = String::new();
+
+                // read first line of stderr
+                let read = reader.read_line(&mut line);
+                trace!("tailscale login output: {}", line);
+                if read.is_ok() && !tried_sudo && line.contains("Access denied") {
+                    info!("Access denied on tailscale login, trying with sudo");
+                    child.kill().ok();
+                    tried_sudo = true;
+                    cmd = &mut sudo_cmd;
+                    continue;
+                }
+
+                loop {
+                    line.clear();
+                    let read = reader.read_line(&mut line);
+                    trace!("tailscale login output: {}", line);
+
+                    if read.is_ok() && line.contains("https://") {
+                        let https_pos = line.find("https://").unwrap();
+                        let url_start = &line[https_pos..];
+                        let end_pos = url_start
+                            .find(|c: char| c.is_whitespace())
+                            .unwrap_or(url_start.len());
+                        let url = &url_start[..end_pos];
+
+                        let res = Command::new("xdg-open").arg(url).output();
+                        if let Err(e) = res {
+                            error!("Failed to open login url: {}", e);
+                        } else {
+                            info!("Opened login url in browser: {}", url);
+                            debug!("Waiting for tailscale login to exit");
+                            let _ = child.wait();
+                            debug!("Wait for tailscale login to exit finished");
+                        }
+                        return;
+                    }
+                    if let Ok(0) = read {
+                        error!("tailscale login output finished without login url");
+                        child.kill().ok();
+                        return;
+                    }
+                }
+            }
+        });
+    }
 }
 
 #[test]
@@ -367,6 +452,17 @@ fn print_starting() {
     let json_str = include_str!("../json/status_starting.json");
     let status = serde_json::from_str::<TailscaleStatus>(json_str).unwrap();
     println!("status: {:?}", status);
+}
+
+#[test]
+fn print_needs_login() {
+    let json_str = include_str!("../json/status_needs_login.json");
+    let status = serde_json::from_str::<TailscaleStatus>(json_str).unwrap();
+    println!("status: {:?}", status);
+
+    let json_str = include_str!("../json/prefs_needs_login.json");
+    let prefs = serde_json::from_str::<TailscalePrefs>(json_str).unwrap();
+    println!("prefs: {:?}", prefs);
 }
 
 #[test]
