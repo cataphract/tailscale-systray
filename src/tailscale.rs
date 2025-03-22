@@ -18,37 +18,36 @@ pub struct TailscaleStatus {
     #[serde(rename = "AuthURL")]
     pub auth_url: String,
     #[serde(rename = "TailscaleIPs")]
-    pub tailscale_ips: Vec<String>,
+    pub tailscale_ips: Option<Vec<String>>,
     #[serde(rename = "Self")]
     pub self_node: Node,
     pub exit_node_status: Option<ExitNodeStatus>,
     pub health: Vec<String>,
     #[serde(rename = "MagicDNSSuffix")]
     pub magic_dns_suffix: String,
-    pub current_tailnet: CurrentTailnet,
-    pub peer: HashMap<String, Node>,
-    pub user: HashMap<String, User>,
+    pub current_tailnet: Option<CurrentTailnet>,
+    pub peer: Option<HashMap<String, Node>>,
+    pub user: Option<HashMap<String, User>>,
 }
 
 impl TailscaleStatus {
-    pub fn online_peers(&self) -> Vec<&Node> {
-        let mut col = self
+    fn filter_peers(&self, f: impl Fn(&Node) -> bool) -> Vec<&Node> {
+        let mut col: Vec<&Node> = self
             .peer
-            .values()
-            .filter(|p| p.online)
-            .collect::<Vec<&Node>>();
+            .as_ref()
+            .into_iter()
+            .flat_map(|peers| peers.values().filter(|p| f(p)))
+            .collect();
         col.sort_by_key(|p| &p.host_name);
         col
     }
 
+    pub fn online_peers(&self) -> Vec<&Node> {
+        self.filter_peers(|p| p.online)
+    }
+
     pub fn online_exit_nodes(&self) -> Vec<&Node> {
-        let mut col = self
-            .peer
-            .values()
-            .filter(|p| p.exit_node || p.exit_node_option)
-            .collect::<Vec<&Node>>();
-        col.sort_by_key(|p| &p.host_name);
-        col
+        self.filter_peers(|p| (p.online && p.exit_node_option) || p.exit_node)
     }
 }
 
@@ -67,9 +66,9 @@ pub struct Node {
     #[serde(rename = "UserID")]
     pub user_id: u64,
     #[serde(rename = "TailscaleIPs")]
-    pub tailscale_ips: Vec<String>,
+    pub tailscale_ips: Option<Vec<String>>,
     #[serde(rename = "AllowedIPs")]
-    pub allowed_ips: Vec<String>,
+    pub allowed_ips: Option<Vec<String>>,
     // Some fields may be null or missing in some nodes
     pub addrs: Option<Vec<String>>,
     pub cur_addr: Option<String>,
@@ -346,23 +345,28 @@ impl TailscaleExec {
 }
 
 #[test]
-fn print() -> Result<(), Box<dyn std::error::Error>> {
-    let json_str = include_str!("../json/status_ok.json");
+fn print_running() {
+    let json_str = include_str!("../json/status_running.json");
 
-    let status: TailscaleStatus = serde_json::from_str(json_str)?;
+    let status: TailscaleStatus = serde_json::from_str(json_str).unwrap();
 
     println!("Version: {}", status.version);
     println!("Self HostName: {}", status.self_node.host_name);
-    println!("Number of peers: {}", status.peer.len());
+    println!("Number of peers: {}", status.peer.as_ref().unwrap().len());
 
-    for (public_key, peer) in &status.peer {
+    for (public_key, peer) in status.peer.as_ref().unwrap() {
         println!(
             "Peer: {} ({}) - Online: {}",
             peer.host_name, public_key, peer.online
         );
     }
+}
 
-    Ok(())
+#[test]
+fn print_starting() {
+    let json_str = include_str!("../json/status_starting.json");
+    let status = serde_json::from_str::<TailscaleStatus>(json_str).unwrap();
+    println!("status: {:?}", status);
 }
 
 #[test]
@@ -372,13 +376,20 @@ fn print_live_status() {
 
     println!("Version: {}", status.version);
     println!("Self HostName: {}", status.self_node.host_name);
-    println!("Number of peers: {}", status.peer.len());
+    let num_peers = status
+        .peer
+        .as_ref()
+        .map(|peers| peers.len())
+        .unwrap_or_default();
+    println!("Number of peers: {}", num_peers);
 
-    for (public_key, peer) in &status.peer {
-        println!(
-            "Peer: {} ({}) - Online: {}",
-            peer.host_name, public_key, peer.online
-        );
+    if let Some(ref peers) = status.peer {
+        for (public_key, peer) in peers {
+            println!(
+                "Peer: {} ({}) - Online: {}",
+                peer.host_name, public_key, peer.online
+            );
+        }
     }
 }
 

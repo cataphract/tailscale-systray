@@ -1,4 +1,4 @@
-use std::{ffi::OsString, path::PathBuf, thread};
+use std::{ffi::OsString, io, path::PathBuf, thread};
 
 use arboard::Clipboard;
 use clap::Parser;
@@ -6,7 +6,9 @@ use ksni::{
     menu::{CheckmarkItem, StandardItem},
     Tray, TrayMethods,
 };
+use log::{debug, error, info, trace, warn, LevelFilter};
 use notify_rust::Notification;
+use std::io::{IsTerminal, Write};
 use tailscale::{ExitNodeOption, TailscaleExec, TailscalePrefs, TailscaleStatus};
 
 mod tailscale;
@@ -44,23 +46,34 @@ impl TailscaleTray {
     }
 
     fn fetch_status(exec: &TailscaleExec) -> ServiceState {
+        trace!("Fetching Tailscale status");
         exec.status()
             .map(|s| ServiceState::Running(Box::new(s)))
-            .unwrap_or(ServiceState::Down)
+            .unwrap_or_else(|e| {
+                warn!("Failed to fetch Tailscale status: {}", e);
+                ServiceState::Down
+            })
     }
 
     fn fetch_prefs(exec: &TailscaleExec) -> Option<Box<TailscalePrefs>> {
-        exec.prefs().ok().map(Box::new)
+        trace!("Fetching Tailscale preferences");
+        match exec.prefs() {
+            Ok(prefs) => Some(Box::new(prefs)),
+            Err(e) => {
+                warn!("Failed to fetch Tailscale preferences: {}", e);
+                None
+            }
+        }
     }
 
     fn refetch_status(&mut self) {
-        // println!("Refetching status");
+        debug!("Refreshing Tailscale status and preferences");
         self.status = Self::fetch_status(&self.exec);
         self.prefs = match &self.status {
             ServiceState::Running(_) => Self::fetch_prefs(&self.exec),
             _ => None,
         };
-        println!("Refetched status: {:?}", self.status);
+        debug!("Refreshed status: {:?}", self.status);
     }
 }
 
@@ -119,7 +132,11 @@ impl Tray for TailscaleTray {
                 }
                 .into()],
                 ServiceState::Running(ref tstatus) => {
-                    let first_ip = tstatus.tailscale_ips.first().map(|s| s.to_owned());
+                    let first_ip = tstatus
+                        .tailscale_ips
+                        .as_ref()
+                        .and_then(|ips| ips.first())
+                        .cloned();
                     let mut res: Vec<ksni::MenuItem<TailscaleTray>> = vec![StandardItem {
                         label: format!(
                             "{}: {}",
@@ -127,7 +144,10 @@ impl Tray for TailscaleTray {
                         ),
                         activate: Box::new(move |this: &mut Self| {
                             if let Some(ip) = &first_ip {
-                                this.clipboard.set_text(ip).unwrap();
+                                match this.clipboard.set_text(ip) {
+                                    Ok(_) => debug!("Copied IP {} to clipboard", ip),
+                                    Err(e) => warn!("Failed to copy IP to clipboard: {}", e),
+                                }
                             }
                         }),
                         ..Default::default()
@@ -139,8 +159,12 @@ impl Tray for TailscaleTray {
                             StandardItem {
                                 label: "Disable".into(),
                                 activate: Box::new(|this: &mut Self| {
+                                    info!("User requested to disable Tailscale");
                                     if let Err(err) = this.exec.down() {
+                                        error!("Failed to disable Tailscale: {}", err);
                                         notify_of_failure(&err);
+                                    } else {
+                                        info!("Successfully disabled Tailscale");
                                     }
                                 }),
                                 ..Default::default()
@@ -152,8 +176,12 @@ impl Tray for TailscaleTray {
                             StandardItem {
                                 label: "Enable".into(),
                                 activate: Box::new(|this: &mut Self| {
+                                    info!("User requested to enable Tailscale");
                                     if let Err(err) = this.exec.up() {
+                                        error!("Failed to enable Tailscale: {}", err);
                                         notify_of_failure(&err);
+                                    } else {
+                                        info!("Successfully enabled Tailscale");
                                     }
                                 }),
                                 ..Default::default()
@@ -197,7 +225,10 @@ impl Tray for TailscaleTray {
             StandardItem {
                 label: "Exit".into(),
                 icon_name: "application-exit".into(),
-                activate: Box::new(|_| std::process::exit(0)),
+                activate: Box::new(|_| {
+                    info!("User requested to exit the application");
+                    std::process::exit(0)
+                }),
                 ..Default::default()
             }
             .into(),
@@ -207,16 +238,27 @@ impl Tray for TailscaleTray {
 }
 
 fn online_peers(status: &TailscaleStatus) -> Vec<ksni::MenuItem<TailscaleTray>> {
+    trace!(
+        "Building online peers menu with {} peers",
+        status.online_peers().len()
+    );
     status
         .online_peers()
         .iter()
         .map(|p| {
-            let first_ip = p.tailscale_ips.first().map(|ip| ip.to_string());
+            let first_ip = p
+                .tailscale_ips
+                .as_ref()
+                .and_then(|ips| ips.first())
+                .cloned();
             StandardItem {
                 label: p.host_name.clone(),
                 activate: Box::new(move |this: &mut TailscaleTray| {
                     if let Some(ip) = &first_ip {
-                        this.clipboard.set_text(ip).unwrap();
+                        match this.clipboard.set_text(ip) {
+                            Ok(_) => debug!("Copied peer IP {} to clipboard", ip),
+                            Err(e) => warn!("Failed to copy peer IP to clipboard: {}", e),
+                        }
                     }
                 }),
                 ..Default::default()
@@ -230,14 +272,22 @@ fn exit_node_menu(
     status: &TailscaleStatus,
     prefs: &TailscalePrefs,
 ) -> Vec<ksni::MenuItem<TailscaleTray>> {
+    trace!("Building exit node menu");
     let advertising_exit_node = prefs
         .advertise_routes
         .iter()
         .flatten()
         .any(|r| r.ends_with("/0"));
 
+    debug!(
+        "Currently advertising as exit node: {}",
+        advertising_exit_node
+    );
+    let online_exit_nodes = status.online_exit_nodes();
+    debug!("Available exit nodes: {}", online_exit_nodes.len());
+
     let mut res: Vec<ksni::MenuItem<TailscaleTray>> = vec![];
-    for node in status.online_exit_nodes() {
+    for node in online_exit_nodes {
         let prefs_clone = prefs.clone();
         let eno = if node.exit_node {
             ExitNodeOption::None
@@ -249,8 +299,12 @@ fn exit_node_menu(
                 label: node.host_name.clone(),
                 checked: node.exit_node,
                 activate: Box::new(move |this: &mut TailscaleTray| {
+                    info!("User changing exit node configuration");
                     if let Err(err) = this.exec.up_reconf(&eno, &prefs_clone) {
+                        error!("Failed to reconfigure exit node: {}", err);
                         notify_of_failure(&err);
+                    } else {
+                        info!("Successfully reconfigured exit node");
                     }
                 }),
                 ..Default::default()
@@ -269,12 +323,17 @@ fn exit_node_menu(
             checked: advertising_exit_node,
             activate: Box::new(move |this: &mut TailscaleTray| {
                 let eno = if advertising_exit_node {
+                    info!("User disabling exit node advertisement");
                     ExitNodeOption::None
                 } else {
+                    info!("User enabling exit node advertisement");
                     ExitNodeOption::Advertise
                 };
                 if let Err(err) = this.exec.up_reconf(&eno, &prefs_clone) {
+                    error!("Failed to reconfigure exit node advertisement: {}", err);
                     notify_of_failure(&err);
+                } else {
+                    info!("Successfully reconfigured exit node advertisement");
                 }
             }),
             ..Default::default()
@@ -287,12 +346,17 @@ fn exit_node_menu(
 
 fn notify_of_failure(err: &anyhow::Error) {
     let err_string = err.to_string();
+    error!("Tailscale operation failed: {}", err_string);
     thread::spawn(move || {
-        let _ = Notification::new()
+        match Notification::new()
             .summary("Tailscale error")
             .body(&err_string)
             .icon("network-error")
-            .show();
+            .show()
+        {
+            Ok(_) => debug!("Displayed error notification"),
+            Err(e) => error!("Failed to display error notification: {}", e),
+        }
     });
 }
 
@@ -310,22 +374,83 @@ struct Args {
     #[arg(long)]
     up_arg: Vec<OsString>,
 
-    /// Refresh period
+    /// Refresh period in seconds
     #[arg(long, default_value = "5")]
     refresh_period: u64,
+
+    /// Verbosity level (0-5, where 0=error, 1=warn, 2=info, 3=debug, 4=trace, 5=trace+)
+    #[arg(short, long, default_value = "2")]
+    verbosity: u8,
+}
+
+fn setup_logger(verbosity: u8) {
+    let level = match verbosity {
+        0 => LevelFilter::Error,
+        1 => LevelFilter::Warn,
+        2 => LevelFilter::Info,
+        3 => LevelFilter::Debug,
+        4 | 5 => LevelFilter::Trace,
+        _ => LevelFilter::Info,
+    };
+
+    let mut builder = env_logger::Builder::new();
+
+    if !io::stdout().is_terminal() {
+        builder.format(move |buf, record| writeln!(buf, "[{}] {}", record.level(), record.args()));
+    }
+
+    builder.filter_level(level).init();
 }
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     let args = Args::parse();
-    let tray = TailscaleTray::new(&args);
-    let handle = tray.spawn().await.unwrap();
 
+    setup_logger(args.verbosity);
+
+    info!(
+        "Starting Tailscale systray with verbosity level {}",
+        args.verbosity
+    );
+    debug!("Using Tailscale binary: {:?}", args.tailscale_bin);
+    if let Some(socket) = &args.socket {
+        debug!("Using Tailscale socket: {:?}", socket);
+    }
+    if !args.up_arg.is_empty() {
+        debug!("Additional 'up' arguments: {:?}", args.up_arg);
+    }
+
+    let tray = TailscaleTray::new(&args);
+    info!("Initializing system tray");
+    let handle = match tray.spawn().await {
+        Ok(h) => {
+            info!("System tray initialized successfully");
+            h
+        }
+        Err(e) => {
+            error!("Failed to initialize system tray: {}", e);
+            panic!("Failed to initialize system tray: {}", e);
+        }
+    };
+
+    info!(
+        "Starting refresh loop with period of {} seconds",
+        args.refresh_period
+    );
     loop {
+        trace!("Waiting for next refresh cycle");
         tokio::time::sleep(std::time::Duration::from_secs(args.refresh_period)).await;
-        let _ = handle
+
+        trace!("Updating tray status");
+        if (handle
             .update(|tray: &mut TailscaleTray| tray.refetch_status())
-            .await;
-        println!("Await finished");
+            .await)
+            .is_none()
+        {
+            error!("The tray service has shutdown");
+            break;
+        } else {
+            trace!("Tray update completed");
+        }
     }
 }

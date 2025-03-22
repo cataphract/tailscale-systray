@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
-Name=Tailscale Exit Node Chooser
-Comment=System tray app for selecting Tailscale exit nodes
+Name=Tailscale Systray
+Comment=A tailscale indicator (using StatusNotifierItem)
 Exec=tailscale-systray
 Icon=network-vpn
 Terminal=false
