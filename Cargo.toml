@@ -2,16 +2,23 @@
 name = "tailscale-systray"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+description = "Application Indicator (SNI) for Tailscale"
+homepage = "https://github.com/cataphract/tailscale-systray"
+repository = "https://github.com/cataphract/tailscale-systray"
+keywords = ["tailscale", "vpn", "network", "systray", "linux"]
+readme = "README.md"
 
 [dependencies]
-anyhow = "1.0.97"
-arboard = { version = "3.4.1", features = [] }
-clap = { version = "4.5.32", features = ["color", "help", "std", "derive"] }
-env_logger = { version = "0.11.7", features = [] }
-ksni = "0.3.1"
-log = { version = "0.4.26", features = [] }
-notify-rust = { version = "4.11.5", features = [] }
+anyhow = "1.0"
+arboard = { version = "3.4", features = [] }
+clap = { version = "4.5", features = ["color", "help", "std", "derive"] }
+env_logger = { version = "0.11", features = [] }
+ksni = "0.3"
+log = { version = "0.4", features = [] }
+notify-rust = { version = "4.11", features = [] }
+rust-embed = "8.6.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.44", features = ["rt"] }
-users = "0.11.0"
+users = "0.11"

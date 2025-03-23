@@ -488,11 +488,3 @@ fn print_live_status() {
         }
     }
 }
-
-#[test]
-fn print_live_prefs() {
-    let tailscale = TailscaleExec::new("tailscale".into(), None, vec![]);
-    let prefs = tailscale.prefs().unwrap();
-
-    println!("{:?}", prefs);
-}
