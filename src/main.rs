@@ -11,6 +11,7 @@ use notify_rust::Notification;
 use std::io::{IsTerminal, Write};
 use tailscale::{ExitNodeOption, TailscaleExec, TailscalePrefs, TailscaleStatus};
 
+mod installation;
 mod tailscale;
 
 #[derive(Debug)]
@@ -96,10 +97,6 @@ impl Tray for TailscaleTray {
                 format!("Tailscale: {}", msg)
             }
         }
-    }
-
-    fn icon_theme_path(&self) -> String {
-        "/home/glopes/repos/tailscale-systray/icons".into()
     }
 
     fn icon_name(&self) -> String {
@@ -378,6 +375,10 @@ struct Args {
     #[arg(long, default_value = "tailscale")]
     tailscale_bin: PathBuf,
 
+    /// Locally install icons and desktop file
+    #[arg(long, default_value_t = false)]
+    install: bool,
+
     /// Path to tailscaled socket
     #[arg(long)]
     socket: Option<PathBuf>,
@@ -387,11 +388,11 @@ struct Args {
     up_arg: Vec<OsString>,
 
     /// Refresh period in seconds
-    #[arg(long, default_value = "5")]
+    #[arg(long, default_value_t = 5u64)]
     refresh_period: u64,
 
     /// Verbosity level (0-5, where 0=error, 1=warn, 2=info, 3=debug, 4=trace, 5=trace+)
-    #[arg(short, long, default_value = "2")]
+    #[arg(short, long, default_value_t = 2u8)]
     verbosity: u8,
 }
 
@@ -419,6 +420,19 @@ async fn main() {
     let args = Args::parse();
 
     setup_logger(args.verbosity);
+
+    if args.install {
+        match installation::local_install() {
+            Ok(_) => {
+                info!("Local installation completed successfully");
+                return;
+            }
+            Err(e) => {
+                error!("Local installation failed: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
 
     info!(
         "Starting Tailscale systray with verbosity level {}",
