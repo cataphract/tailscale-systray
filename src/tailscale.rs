@@ -29,8 +29,10 @@ pub struct TailscaleStatus {
     #[serde(rename = "MagicDNSSuffix")]
     pub magic_dns_suffix: String,
     pub current_tailnet: Option<CurrentTailnet>,
+    pub cert_domains: Option<Vec<String>>,
     pub peer: Option<HashMap<String, Node>>,
     pub user: Option<HashMap<String, User>>,
+    pub client_version: Option<serde_json::Value>,
 }
 
 impl TailscaleStatus {
@@ -76,6 +78,7 @@ pub struct Node {
     pub addrs: Option<Vec<String>>,
     pub cur_addr: Option<String>,
     pub relay: String,
+    pub peer_relay: Option<String>,
     pub rx_bytes: Option<u64>,
     pub tx_bytes: Option<u64>,
     pub created: Option<String>,
@@ -88,12 +91,15 @@ pub struct Node {
     pub active: Option<bool>,
     #[serde(rename = "PeerAPIURL")]
     pub peer_api_url: Option<Vec<String>>,
+    pub taildrop_target: Option<u32>,
+    pub no_file_sharing_reason: Option<String>,
     pub capabilities: Option<Vec<String>>,
     pub cap_map: Option<HashMap<String, Option<serde_json::Value>>>,
     pub primary_routes: Option<Vec<String>>,
     pub in_network_map: Option<bool>,
     pub in_magic_sock: Option<bool>,
     pub in_engine: Option<bool>,
+    pub key_expiry: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -113,9 +119,8 @@ pub struct User {
     pub id: u64,
     pub login_name: String,
     pub display_name: String,
-    #[serde(rename = "ProfilePicURL")]
+    #[serde(rename = "ProfilePicURL", default)]
     pub profile_pic_url: String,
-    pub roles: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -128,7 +133,7 @@ pub struct ExitNodeStatus {
     pub tailscale_ips: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(rename_all = "PascalCase")]
 pub struct TailscalePrefs {
     #[serde(rename = "ControlURL")]
@@ -168,14 +173,14 @@ pub struct TailscalePrefs {
     pub config: Option<Config>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(rename_all = "PascalCase")]
 pub struct AutoUpdate {
     pub check: bool,
     pub apply: Option<bool>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(rename_all = "PascalCase")]
 pub struct AppConnector {
     pub advertise: bool,
@@ -199,9 +204,8 @@ pub struct UserProfile {
     pub id: u64,
     pub login_name: String,
     pub display_name: String,
-    #[serde(rename = "ProfilePicURL")]
+    #[serde(rename = "ProfilePicURL", default)]
     pub profile_pic_url: String,
-    pub roles: Vec<String>,
 }
 
 pub struct TailscaleExec {
@@ -311,6 +315,9 @@ impl TailscaleExec {
         if prefs.route_all {
             args.push("--accept-routes".into());
         }
+        if prefs.exit_node_allow_lan_access {
+            args.push("--exit-node-allow-lan-access".into());
+        }
         match exit_node_opt {
             ExitNodeOption::None => {}
             ExitNodeOption::UseNode(node) => {
@@ -373,7 +380,7 @@ impl TailscaleExec {
                 let mut child = match cmd.spawn() {
                     Ok(child) => child,
                     Err(e) => {
-                        warn!("Failed to start tailscale login: {}", e);
+                        warn!("Failed to start tailscale login: {:#}", e);
                         return;
                     }
                 };
@@ -409,7 +416,7 @@ impl TailscaleExec {
 
                         let res = Command::new("xdg-open").arg(url).output();
                         if let Err(e) = res {
-                            error!("Failed to open login url: {}", e);
+                            error!("Failed to open login url: {:#}", e);
                         } else {
                             info!("Opened login url in browser: {}", url);
                             debug!("Waiting for tailscale login to exit");

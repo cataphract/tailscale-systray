@@ -10,7 +10,8 @@ connections on Linux systems.
 - View online peers and copy their IPs to the clipboard
 - Configure and use exit nodes
 - Advertise your device as an exit node
-- Authentication via browser for easy login
+- **Network namespace isolation**: Run tailscaled in an isolated network
+  namespace. Exit nodes can be used by only a set of processes.
 
 ## Installation
 
@@ -48,23 +49,23 @@ cargo install tailscale-systray
 ### Command-line Arguments
 
 ```
-Usage: tailscale-systray [OPTIONS]
+Application Indicator (SNI) for Tailscale
+
+Usage: tailscale-systray [OPTIONS] [COMMAND]
+
+Commands:
+  run         Run the application normally
+  install     Install icons and desktop file
+  ns-prepare  Prepare segregated networking
+  ns-helper   Launch namespace fd supplier
+  ns-enter    Enter the namespaces for the segregated network and execute
+  systemd     Systemd integration commands
+  help        Print this message or the help of the given subcommand(s)
 
 Options:
-      --tailscale-bin <TAILSCALE_BIN>
-          Tailscale executable [default: tailscale]
-      --install
-          Locally install icons and desktop file
-      --socket <SOCKET>
-          Path to tailscaled socket
-      --up-arg <UP_ARG>
-          Extra arguments to pass "tailscale up"
-      --refresh-period <REFRESH_PERIOD>
-          Refresh period in seconds [default: 5]
-  -v, --verbosity <VERBOSITY>
-          Verbosity level (0-5, where 0=error, 1=warn, 2=info, 3=debug, 4=trace, 5=trace+) [default: 2]
-  -h, --help
-          Print help
+  -v, --verbosity <VERBOSITY>  Verbosity level (0-5, where 0=error, 1=warn, 2=info, 3=debug, 4=trace, 5=trace+) [default: 2]
+  -h, --help                   Print help
+  -V, --version                Print version
 ```
 
 ### System Tray Features
@@ -74,11 +75,15 @@ Options:
   - Green checkmark: Tailscale is up and connected
   - Blue globe: Connected through an exit node
   - Red X: Tailscale is down or not connected
+  - Red circumference around to signal running in separate namespace
 - **Menu options**:
   - Enable/Disable Tailscale
   - View online peers (click to copy IP)
   - Configure exit nodes
   - Advertise as an exit node
+  - Allow LAN access
+  - Enable/disable namespace isolation (systemd only)
+  - Run command in namespace
 
 ## License
 

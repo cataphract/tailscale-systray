@@ -4,6 +4,8 @@ use anyhow::Context;
 use log::{info, warn};
 use rust_embed::Embed;
 
+use crate::xdg;
+
 #[derive(Embed)]
 #[folder = "icons/"]
 struct Icons;
@@ -55,7 +57,7 @@ fn install_icons() -> anyhow::Result<()> {
 }
 
 fn install_desktop() -> anyhow::Result<()> {
-    let prefix = xdg_data_home();
+    let prefix = xdg::data_home();
     let applications = prefix.join("applications");
 
     std::fs::create_dir_all(&applications)
@@ -93,14 +95,14 @@ StartupNotify=false
 }
 
 fn install_autostart() -> anyhow::Result<()> {
-    let autostart_dir = xdg_config_home().join("autostart");
+    let autostart_dir = xdg::config_home().join("autostart");
     std::fs::create_dir_all(&autostart_dir)
         .with_context(|| format!("Failed to create directory: {:?}", autostart_dir))?;
 
     let autostart_file = autostart_dir.join("tailscale-systray.desktop");
 
     std::os::unix::fs::symlink(
-        xdg_data_home().join("applications/tailscale-systray.desktop"),
+        xdg::data_home().join("applications/tailscale-systray.desktop"),
         &autostart_file,
     )
     .with_context(|| format!("Failed to create symlink: {:?}", autostart_file))?;
@@ -108,26 +110,4 @@ fn install_autostart() -> anyhow::Result<()> {
     info!("Installed autostart symlink: {:?}", autostart_file);
 
     Ok(())
-}
-
-fn xdg_config_home() -> PathBuf {
-    std::env::var_os("XDG_CONFIG_HOME")
-        .filter(|os_str| !os_str.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            PathBuf::from(
-                std::env::var_os("HOME").expect("Neither XDG_CONFIG_HOME nor HOME is set"),
-            )
-            .join(".config")
-        })
-}
-
-fn xdg_data_home() -> PathBuf {
-    std::env::var_os("XDG_DATA_HOME")
-        .filter(|os_str| !os_str.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            PathBuf::from(std::env::var_os("HOME").expect("Neither XDG_DATA_HOME nor HOME is set"))
-                .join(".local/share")
-        })
 }
