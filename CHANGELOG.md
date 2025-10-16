@@ -2,6 +2,16 @@
 
 All notable changes to tailscale-systray will be documented in this file.
 
+## [0.2.1] - 2025-10-16
+
+### Fixed
+
+- **Mount propagation**: Changed mount propagation mode from `MS_PRIVATE` to
+  `MS_SLAVE` in namespace setup to properly handle mount events outside the
+  namespace
+- **Supplementary groups**: Set supplementary groups when dropping privileges
+  in the helper process
+
 ## [0.2.0] - 2025-10-14
 
 ### Added

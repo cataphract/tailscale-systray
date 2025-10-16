@@ -142,17 +142,30 @@ pub async fn handle_helper_process(socket_path: &PathBuf) -> anyhow::Result<()> 
         .context("PKEXEC_UID is not a valid number")?;
     let original_uid = Uid::from_raw(original_uid_u32);
 
-    let original_gid = users::get_user_by_uid(original_uid.as_raw())
-        .map(|user| user.primary_group_id())
-        .map(Gid::from_raw)
-        .unwrap_or_else(|| Gid::from_raw(original_uid_u32));
+    let user =
+        users::get_user_by_uid(original_uid.as_raw()).context("Failed to get user information")?;
+
+    let original_gid = Gid::from_raw(user.primary_group_id());
+
+    // Get all supplementary groups for the user
+    let user_groups = users::get_user_groups(user.name().to_str().unwrap(), original_gid.as_raw())
+        .context("Failed to get user groups")?;
+    let supplementary_groups: Vec<Gid> = user_groups
+        .iter()
+        // for some reason 0 (root) is included in the supplementary groups, filter it out
+        .filter(|g| g.gid() != 0)
+        .map(|g| Gid::from_raw(g.gid()))
+        .collect();
+    debug!("User supplementary groups: {:?}", supplementary_groups);
 
     info!(
-        "Helper: Dropping privileges to UID={}, GID={}",
-        original_uid, original_gid
+        "Helper: Dropping privileges to UID={}, GID={}, supplementary groups: {:?}",
+        original_uid, original_gid, supplementary_groups
     );
 
-    // Drop privileges
+    // set uid, gid and supplementary groups
+    // Set supplementary groups first because they require root privileges
+    nix::unistd::setgroups(&supplementary_groups).context("Failed to set supplementary groups")?;
     nix::unistd::setgid(original_gid).context("Failed to set GID")?;
     nix::unistd::setuid(original_uid).context("Failed to set UID")?;
 

@@ -343,7 +343,7 @@ fn setup_child_namespace(run_dir: &str, sync_pipe: i32) -> anyhow::Result<()> {
         None::<&str>,
         "/",
         None::<&str>,
-        MsFlags::MS_REC | MsFlags::MS_PRIVATE,
+        MsFlags::MS_REC | MsFlags::MS_SLAVE,
         None::<&str>,
     )
     .context("Failed to change mount propagation")?;
