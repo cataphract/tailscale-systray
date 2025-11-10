@@ -34,14 +34,14 @@ cargo build --release
 sudo cp target/release/tailscale-systray /usr/local/bin/
 
 # Copy icons/.desktop files for current user (invoke the *copied* executable!)
-tailscale-systray --install
+tailscale-systray install
 ```
 
 Alternatively:
 
 ```bash
 cargo install tailscale-systray
-~/.cargo/bin/tailscale-systray --install
+~/.cargo/bin/tailscale-systray install
 ```
 
 ## Usage
