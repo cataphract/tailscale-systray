@@ -13,11 +13,12 @@ use nix::sys::signal::Signal;
 use nix::sys::stat::Mode;
 use nix::unistd::mkdir;
 use rtnetlink::{new_connection, Handle, LinkUnspec, LinkVeth, RouteMessageBuilder};
+use static_assertions::const_assert_eq;
 use std::ffi::{CStr, CString};
 use std::fs::File;
 use std::future::Future;
 use std::io::{IoSlice, Write};
-use std::net::Ipv4Addr;
+use std::net::{Ipv4Addr, Ipv6Addr};
 use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd};
 use std::path::Path;
 
@@ -101,6 +102,13 @@ async fn create_veth_pair(handle: &Handle, ts_ns: &Namespace) -> anyhow::Result<
         .execute()
         .await
         .context(format!("Adding address to {}", VETH_NAME_HOST))?;
+    debug!("Adding IPv6 address fc00::1/64 to {}", VETH_NAME_HOST);
+    handle
+        .address()
+        .add(veth_host_idx, "fc00::1".parse()?, 64)
+        .execute()
+        .await
+        .context(format!("Adding IPv6 address to {}", VETH_NAME_HOST))?;
 
     info!("Moving interface {} to namespace", VETH_NAME_NS);
     handle
@@ -129,11 +137,18 @@ async fn configure_veth_ns(handle: &Handle, veth_ns_idx: u32) -> anyhow::Result<
         .execute()
         .await
         .context(format!("Adding address to {}", VETH_NAME_NS))?;
+    debug!("Adding IPv6 address fc00::2/64 to {}", VETH_NAME_NS);
+    handle
+        .address()
+        .add(veth_ns_idx, "fc00::2".parse()?, 64)
+        .execute()
+        .await
+        .context(format!("Adding IPv6 address to {}", VETH_NAME_NS))?;
     Ok(())
 }
 
 async fn add_default_route(handle: &Handle) -> anyhow::Result<()> {
-    info!("Adding default route via 172.31.0.1");
+    info!("Adding IPv4 default route via 172.31.0.1");
     handle
         .route()
         .add(
@@ -143,8 +158,21 @@ async fn add_default_route(handle: &Handle) -> anyhow::Result<()> {
         )
         .execute()
         .await
-        .context("Error adding default route")?;
-    debug!("Default route added successfully");
+        .context("Error adding IPv4 default route")?;
+    debug!("IPv4 default route added successfully");
+
+    info!("Adding IPv6 default route via fc00::1");
+    handle
+        .route()
+        .add(
+            RouteMessageBuilder::<Ipv6Addr>::new()
+                .gateway("fc00::1".parse()?)
+                .build(),
+        )
+        .execute()
+        .await
+        .context("Error adding IPv6 default route")?;
+    debug!("IPv6 default route added successfully");
 
     Ok(())
 }
@@ -497,8 +525,13 @@ where
     res
 }
 
-// Unique identifier for our tailscale NAT rule
+// Unique identifier for our tailscale NAT rules
 const TS_NAT_RULE_MARKER: &[u8] = b"tailscale-systray-nat-v1";
+const TS_NAT6_RULE_MARKER: &[u8] = b"tailscale-systray-nat6-v1";
+const TS_FORWARD_OUT_RULE_MARKER: &[u8] = b"tailscale-systray-fwd-out-v1";
+const TS_FORWARD_IN_RULE_MARKER: &[u8] = b"tailscale-systray-fwd-in-v1";
+const TS_FORWARD6_OUT_RULE_MARKER: &[u8] = b"tailscale-systray-fwd6-out-v1";
+const TS_FORWARD6_IN_RULE_MARKER: &[u8] = b"tailscale-systray-fwd6-in-v1";
 
 // Netlink message parsing helpers (these are macros in C but we implement as functions)
 const NLMSG_ALIGNTO: u32 = 4;
@@ -597,19 +630,34 @@ fn create_netfilter_socket() -> anyhow::Result<netlink_sys::TokioSocket> {
 // XT Target expression for iptables compatibility
 pub struct XtTarget {
     name: &'static CStr,
+    is_ipv6: bool,
 }
 
 impl XtTarget {
     pub fn masquerade() -> Self {
         Self {
             name: c"MASQUERADE",
+            is_ipv6: false,
+        }
+    }
+
+    pub fn masquerade_v6() -> Self {
+        Self {
+            name: c"MASQUERADE",
+            is_ipv6: true,
         }
     }
 }
 
-// target info buffer for MASQUERADE xt target (24 bytes matching what we saw iptables do)
+// target info buffer for MASQUERADE xt target (24 bytes for IPv4)
 const XT_TG_INFO: [u8; 24] = [
     1u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+];
+
+// target info buffer for MASQUERADE xt target (40 bytes for IPv6)
+const XT_TG_INFO_V6: [u8; 40] = [
+    0u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
 impl Expression for XtTarget {
@@ -628,19 +676,22 @@ impl Expression for XtTarget {
             // set revision to 0
             sys::nftnl_expr_set_u32(expr, sys::NFTNL_EXPR_TG_REV as u16, 0);
 
-            let tg_info_copy = libc::malloc(XT_TG_INFO.len());
-            std::ptr::copy_nonoverlapping(
-                XT_TG_INFO.as_ptr(),
-                tg_info_copy as *mut _,
-                XT_TG_INFO.len(),
-            );
+            // Use the correct target info buffer based on IPv4/IPv6
+            let (tg_info_ptr, tg_info_len) = if self.is_ipv6 {
+                (XT_TG_INFO_V6.as_ptr(), XT_TG_INFO_V6.len())
+            } else {
+                (XT_TG_INFO.as_ptr(), XT_TG_INFO.len())
+            };
+
+            let tg_info_copy = libc::malloc(tg_info_len);
+            std::ptr::copy_nonoverlapping(tg_info_ptr, tg_info_copy as *mut _, tg_info_len);
 
             // set target info (takes ownership of the data buffer)
             sys::nftnl_expr_set(
                 expr,
                 sys::NFTNL_EXPR_TG_INFO as u16,
                 tg_info_copy as *const _,
-                XT_TG_INFO.len() as u32,
+                tg_info_len as u32,
             );
 
             expr
@@ -648,10 +699,141 @@ impl Expression for XtTarget {
     }
 }
 
-async fn nat_rule_exists(socket: &mut netlink_sys::TokioSocket) -> anyhow::Result<bool> {
+// Connection tracking state bits (from nf_conntrack_common.h)
+#[repr(u16)]
+#[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
+pub enum NfCtState {
+    Invalid = 0x0001,     // NF_CT_STATE_INVALID_BIT
+    Established = 0x0002, // NF_CT_STATE_BIT(IP_CT_ESTABLISHED)
+    Related = 0x0004,     // NF_CT_STATE_BIT(IP_CT_RELATED)
+    New = 0x0008,         // NF_CT_STATE_BIT(IP_CT_NEW)
+    Untracked = 0x0040,   // NF_CT_STATE_UNTRACKED_BIT
+}
+
+// xt_conntrack match flags (from xt_conntrack.h)
+#[repr(u16)]
+#[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
+pub enum XtConntrackFlags {
+    State = 1 << 0,        // XT_CONNTRACK_STATE
+    Proto = 1 << 1,        // XT_CONNTRACK_PROTO
+    OrigSrc = 1 << 2,      // XT_CONNTRACK_ORIGSRC
+    OrigDst = 1 << 3,      // XT_CONNTRACK_ORIGDST
+    ReplSrc = 1 << 4,      // XT_CONNTRACK_REPLSRC
+    ReplDst = 1 << 5,      // XT_CONNTRACK_REPLDST
+    Status = 1 << 6,       // XT_CONNTRACK_STATUS
+    Expires = 1 << 7,      // XT_CONNTRACK_EXPIRES
+    OrigSrcPort = 1 << 8,  // XT_CONNTRACK_ORIGSRC_PORT
+    OrigDstPort = 1 << 9,  // XT_CONNTRACK_ORIGDST_PORT
+    ReplSrcPort = 1 << 10, // XT_CONNTRACK_REPLSRC_PORT
+    ReplDstPort = 1 << 11, // XT_CONNTRACK_REPLDST_PORT
+    Direction = 1 << 12,   // XT_CONNTRACK_DIRECTION
+}
+
+// Matches the kernel's xt_conntrack_mtinfo3 structure (168 bytes)
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+#[allow(dead_code)]
+struct XtConntrackMtinfo3 {
+    origsrc_addr: [u8; 16],
+    origsrc_mask: [u8; 16],
+    origdst_addr: [u8; 16],
+    origdst_mask: [u8; 16],
+    replsrc_addr: [u8; 16],
+    replsrc_mask: [u8; 16],
+    repldst_addr: [u8; 16],
+    repldst_mask: [u8; 16],
+    expires_min: u32,
+    expires_max: u32,
+    l4proto: u16,
+    origsrc_port: u16,
+    origdst_port: u16,
+    replsrc_port: u16,
+    repldst_port: u16,
+    match_flags: u16,
+    invert_flags: u16,
+    state_mask: u16,
+    status_mask: u16,
+    origsrc_port_high: u16,
+    origdst_port_high: u16,
+    replsrc_port_high: u16,
+    repldst_port_high: u16,
+    _padding: [u8; 4], // Explicit padding to reach 168 bytes
+}
+
+const_assert_eq!(std::mem::size_of::<XtConntrackMtinfo3>(), 168);
+
+pub struct XtConntrack3 {
+    mtinfo: XtConntrackMtinfo3,
+}
+
+impl XtConntrack3 {
+    // Match ESTABLISHED and RELATED states (verified: 0x02 | 0x04 = 0x06)
+    pub fn conntrack_state_established_related() -> Self {
+        let mtinfo = XtConntrackMtinfo3 {
+            match_flags: XtConntrackFlags::State as u16,
+            state_mask: NfCtState::Established as u16 | NfCtState::Related as u16,
+            ..Default::default()
+        };
+
+        Self { mtinfo }
+    }
+}
+
+impl Expression for XtConntrack3 {
+    fn to_expr(&self, _rule: &Rule) -> *mut sys::nftnl_expr {
+        unsafe {
+            trace!("XtConntrack3: Allocating xt match expression for conntrack");
+            let expr = sys::nftnl_expr_alloc(c"match".as_ptr());
+            if expr.is_null() {
+                error!("XtConntrack3: nftnl_expr_alloc returned null for 'match'");
+                return std::ptr::null_mut();
+            }
+
+            sys::nftnl_expr_set_str(expr, sys::NFTNL_EXPR_MT_NAME as u16, c"conntrack".as_ptr());
+            sys::nftnl_expr_set_u32(expr, sys::NFTNL_EXPR_MT_REV as u16, 3);
+
+            // Convert the structure to bytes
+            let mt_info_ptr = &self.mtinfo as *const XtConntrackMtinfo3 as *const u8;
+            let mt_info_len = std::mem::size_of::<XtConntrackMtinfo3>();
+
+            let mt_info_copy = libc::malloc(mt_info_len);
+            std::ptr::copy_nonoverlapping(mt_info_ptr, mt_info_copy as *mut u8, mt_info_len);
+
+            sys::nftnl_expr_set(
+                expr,
+                sys::NFTNL_EXPR_MT_INFO as u16,
+                mt_info_copy as *const _,
+                mt_info_len as u32,
+            );
+
+            debug!(
+                "XtConntrack3: Set match info (state_mask=0x{:04x}, match_flags=0x{:04x})",
+                self.mtinfo.state_mask, self.mtinfo.match_flags
+            );
+
+            expr
+        }
+    }
+}
+
+async fn check_rule_exists(
+    socket: &mut netlink_sys::TokioSocket,
+    proto_family: u32,
+    table: &CStr,
+    chain: &CStr,
+    marker: &[u8],
+    proto_name: &str,
+) -> anyhow::Result<bool> {
     use nftnl::nftnl_sys as sys;
 
-    debug!("Checking if NAT rule already exists");
+    debug!(
+        "Checking if {} rule already exists in {}/{}",
+        proto_name,
+        table.to_str().unwrap_or("?"),
+        chain.to_str().unwrap_or("?")
+    );
 
     // use nftnl_sys, we don't have high-level bindings for rule listing
     let (buffer, msg_len) = unsafe {
@@ -661,22 +843,17 @@ async fn nat_rule_exists(socket: &mut netlink_sys::TokioSocket) -> anyhow::Resul
         }
 
         // Set the table and chain we want to query
-        sys::nftnl_rule_set_str(rule, sys::NFTNL_RULE_TABLE as u16, c"nat".as_ptr());
-        sys::nftnl_rule_set_str(rule, sys::NFTNL_RULE_CHAIN as u16, c"POSTROUTING".as_ptr());
-        sys::nftnl_rule_set_u32(
-            rule,
-            sys::NFTNL_RULE_FAMILY as u16,
-            libc::NFPROTO_IPV4 as u32,
-        );
+        sys::nftnl_rule_set_str(rule, sys::NFTNL_RULE_TABLE as u16, table.as_ptr());
+        sys::nftnl_rule_set_str(rule, sys::NFTNL_RULE_CHAIN as u16, chain.as_ptr());
+        sys::nftnl_rule_set_u32(rule, sys::NFTNL_RULE_FAMILY as u16, proto_family);
 
-        // Allocate buffer for the message
         let mut buffer = vec![0u8; 4096];
 
         // Build netlink message header with GETRULE type and DUMP flag
         let nlh = sys::nftnl_nlmsg_build_hdr(
             buffer.as_mut_ptr() as *mut i8,
             libc::NFT_MSG_GETRULE as u16,
-            libc::NFPROTO_IPV4 as u16,
+            proto_family as u16,
             (libc::NLM_F_REQUEST | libc::NLM_F_DUMP) as u16,
             0, // seq
         );
@@ -697,15 +874,17 @@ async fn nat_rule_exists(socket: &mut netlink_sys::TokioSocket) -> anyhow::Resul
     };
 
     let kernel_addr = SocketAddr::new(0, 0);
-    debug!("Sending GETRULE request ({} bytes)", msg_len);
+    debug!("Sending {} GETRULE request ({} bytes)", proto_name, msg_len);
     socket
         .send_to(&buffer[..msg_len], &kernel_addr)
         .await
-        .context("Failed to send GETRULE request")?;
+        .context(format!("Failed to send {} GETRULE request", proto_name))?;
 
-    debug!("Waiting for GETRULE responses");
+    debug!("Waiting for {} GETRULE responses", proto_name);
     // Read responses with timeout
     let timeout_duration = std::time::Duration::from_secs(2);
+
+    let mut found = false;
 
     loop {
         let recv_result = tokio::time::timeout(timeout_duration, socket.recv_from_full()).await;
@@ -716,12 +895,19 @@ async fn nat_rule_exists(socket: &mut netlink_sys::TokioSocket) -> anyhow::Resul
                 (buf, addr)
             }
             Ok(Err(e)) => {
-                return Err(anyhow::anyhow!("Failed to receive GETRULE response: {}", e));
+                return Err(anyhow::anyhow!(
+                    "Failed to receive {} GETRULE response: {}",
+                    proto_name,
+                    e
+                ));
             }
             Err(_) => {
                 // Timeout - no more messages
-                debug!("Timeout waiting for responses, rule not found");
-                return Ok(false);
+                debug!(
+                    "Timeout waiting for responses, {} rule found: {}",
+                    proto_name, found
+                );
+                return Ok(found);
             }
         };
 
@@ -739,8 +925,11 @@ async fn nat_rule_exists(socket: &mut netlink_sys::TokioSocket) -> anyhow::Resul
 
                 // Check for NLMSG_DONE
                 if nlmsg_type == libc::NLMSG_DONE as u16 {
-                    debug!("Received NLMSG_DONE, finished checking rules");
-                    return Ok(false);
+                    debug!(
+                        "Received NLMSG_DONE, finished checking {} rules",
+                        proto_name
+                    );
+                    return Ok(found);
                 }
 
                 // Check for NLMSG_ERROR
@@ -756,7 +945,10 @@ async fn nat_rule_exists(socket: &mut netlink_sys::TokioSocket) -> anyhow::Resul
                 let nft_msg_newrule =
                     ((libc::NFNL_SUBSYS_NFTABLES << 8) | libc::NFT_MSG_NEWRULE) as u16;
                 if nlmsg_type == nft_msg_newrule {
-                    debug!("Found NFT_MSG_NEWRULE, checking for our marker");
+                    debug!(
+                        "Found NFT_MSG_NEWRULE, checking for our {} marker",
+                        proto_name
+                    );
 
                     let rule_ptr = sys::nftnl_rule_alloc();
                     if rule_ptr.is_null() {
@@ -783,20 +975,29 @@ async fn nat_rule_exists(socket: &mut netlink_sys::TokioSocket) -> anyhow::Resul
                         &mut userdata_len as *mut u32,
                     );
 
-                    if !userdata_ptr.is_null() && userdata_len == TS_NAT_RULE_MARKER.len() as u32 {
+                    if !userdata_ptr.is_null() && userdata_len == marker.len() as u32 {
                         let userdata_slice = std::slice::from_raw_parts(
                             userdata_ptr as *const u8,
                             userdata_len as usize,
                         );
-                        if userdata_slice == TS_NAT_RULE_MARKER {
-                            debug!("Found existing NAT rule with our marker!");
-                            sys::nftnl_rule_free(rule_ptr);
-                            return Ok(true);
+                        trace!(
+                            "Found userdata (len={}): {:?}, looking for: {:?}",
+                            userdata_len,
+                            std::str::from_utf8(userdata_slice).unwrap_or("?"),
+                            std::str::from_utf8(marker).unwrap_or("?")
+                        );
+                        if userdata_slice == marker {
+                            debug!("Found existing {} rule with our marker!", proto_name);
+                            found = true;
                         } else {
                             debug!("Found userdata but it doesn't match our marker");
                         }
                     } else {
-                        debug!("No userdata found in this rule");
+                        trace!(
+                            "No userdata found in this rule (ptr null={}, len={})",
+                            userdata_ptr.is_null(),
+                            userdata_len
+                        );
                     }
 
                     sys::nftnl_rule_free(rule_ptr);
@@ -810,27 +1011,106 @@ async fn nat_rule_exists(socket: &mut netlink_sys::TokioSocket) -> anyhow::Resul
     }
 }
 
-async fn ensure_nat_table_and_chain(socket: &mut netlink_sys::TokioSocket) -> anyhow::Result<()> {
-    info!("Ensuring nat table and POSTROUTING chain exist");
+unsafe fn set_rule_userdata(rule: &Rule, marker: &[u8]) {
+    // alas, we need to break the abstraction as Rule.rule is not public
+    let rule_as_bytes = rule as *const Rule as *const u8;
+    // the rust compiler is swapping the two fields of Rule;
+    // *mut sys::nftnl_rule shows up later in memory
+    let rule_ptr_ptr = rule_as_bytes.offset(8) as *const *mut sys::nftnl_rule;
+    let rule_ptr = *rule_ptr_ptr;
 
-    let mut batch = Batch::new();
-    let table = Table::new(&c"nat", ProtoFamily::Ipv4);
-    let mut chain = Chain::new(&c"POSTROUTING", &table);
-    chain.set_hook(nftnl::Hook::PostRouting, 100); // NF_INET_POST_ROUTING = 4, priority = 100 (NF_IP_PRI_NAT_SRC)
-    chain.set_policy(nftnl::Policy::Accept);
-    chain.set_type(nftnl::ChainType::Nat);
-    batch.add(&table, nftnl::MsgType::Add);
-    batch.add(&chain, nftnl::MsgType::Add);
-    let finalized_batch = batch.finalize();
+    sys::nftnl_rule_set_data(
+        rule_ptr,
+        sys::NFTNL_RULE_USERDATA as u16,
+        marker.as_ptr() as *const std::os::raw::c_void,
+        marker.len() as u32,
+    );
+}
 
-    let kernel_addr = SocketAddr::new(0, 0);
-    let bytes_sent = socket
-        .sendmsg(&finalized_batch, &kernel_addr)
-        .await
-        .context("Failed to send table/chain creation batch")?;
+async fn nat_rule_exists(socket: &mut netlink_sys::TokioSocket) -> anyhow::Result<bool> {
+    check_rule_exists(
+        socket,
+        libc::NFPROTO_IPV4 as u32,
+        c"nat",
+        c"POSTROUTING",
+        TS_NAT_RULE_MARKER,
+        "IPv4 NAT",
+    )
+    .await
+}
 
-    debug!("Sent {} bytes", bytes_sent);
-    info!("Table and chain creation batch sent");
+async fn nat6_rule_exists(socket: &mut netlink_sys::TokioSocket) -> anyhow::Result<bool> {
+    check_rule_exists(
+        socket,
+        libc::NFPROTO_IPV6 as u32,
+        c"nat",
+        c"POSTROUTING",
+        TS_NAT6_RULE_MARKER,
+        "IPv6 NAT",
+    )
+    .await
+}
+
+async fn create_nat6_rule() -> anyhow::Result<()> {
+    info!("Creating IPv6 NAT rule for fc00::/64 subnet");
+
+    let mut socket = create_netfilter_socket()?;
+
+    // First, ensure the nat table and POSTROUTING chain exist
+    ensure_nat_table_and_chain_for_family(&mut socket, ProtoFamily::Ipv6).await?;
+
+    // Check if our rule already exists
+    if nat6_rule_exists(&mut socket).await? {
+        info!("IPv6 NAT rule already exists, skipping creation");
+        return Ok(());
+    }
+
+    // Create the NAT rule
+    let table = Table::new(&c"nat", ProtoFamily::Ipv6);
+    let chain = Chain::new(&c"POSTROUTING", &table);
+    let mut rule = Rule::new(&chain);
+
+    debug!("Building IPv6 NAT rule for POSTROUTING chain");
+
+    // Load nfproto metadata (check if IPv6)
+    rule.add_expr(&nft_expr!(meta nfproto));
+    rule.add_expr(&nft_expr!(cmp == libc::NFPROTO_IPV6 as u8));
+
+    // Load source IPv6 address
+    rule.add_expr(&nft_expr!(payload ipv6 saddr));
+
+    // Apply bitwise mask for fc00::/64 network
+    // Network mask: ffff:ffff:ffff:ffff:0:0:0:0 (64-bit prefix)
+    let network_mask: [u8; 16] = [
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00,
+    ];
+    let zero_xor: [u8; 16] = [0u8; 16];
+    rule.add_expr(&nft_expr!(bitwise mask &network_mask[..], xor &zero_xor[..]));
+
+    // Compare with network address fc00::
+    let network_addr: [u8; 16] = [
+        0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00,
+    ];
+    rule.add_expr(&nft_expr!(cmp == &network_addr[..]));
+
+    // Add a counter
+    rule.add_expr(&nft_expr!(counter));
+
+    debug!("About to add XtTarget expression for IPv6");
+    rule.add_expr(&XtTarget::masquerade_v6());
+    debug!("XtTarget expression added for IPv6");
+
+    debug!("Adding user data marker to IPv6 NAT rule");
+    unsafe {
+        set_rule_userdata(&rule, TS_NAT6_RULE_MARKER);
+    }
+
+    debug!("Sending IPv6 NAT rule to netfilter");
+    send_rule(&mut socket, &rule).await?;
+
+    info!("IPv6 NAT rule created successfully");
     Ok(())
 }
 
@@ -840,7 +1120,7 @@ async fn create_nat_rule() -> anyhow::Result<()> {
     let mut socket = create_netfilter_socket()?;
 
     // First, ensure the nat table and POSTROUTING chain exist
-    ensure_nat_table_and_chain(&mut socket).await?;
+    ensure_nat_table_and_chain_for_family(&mut socket, ProtoFamily::Ipv4).await?;
 
     // Check if our rule already exists
     if nat_rule_exists(&mut socket).await? {
@@ -883,26 +1163,53 @@ async fn create_nat_rule() -> anyhow::Result<()> {
     // rule.add_expr(&nftnl::expr::Masquerade);
 
     // Add our unique marker as userdata to identify this rule later
-    // this doesn't seem to be exposed in the high-level nftnl crate
     debug!("Adding user data marker to NAT rule");
     unsafe {
-        // Extract nftnl_rule pointer from Rule struct at offset 8
-        let rule_as_bytes = &rule as *const Rule as *const u8;
-        let rule_ptr_ptr = rule_as_bytes.offset(8) as *const *mut sys::nftnl_rule;
-        let rule_ptr = *rule_ptr_ptr;
-
-        sys::nftnl_rule_set_data(
-            rule_ptr,
-            sys::NFTNL_RULE_USERDATA as u16,
-            TS_NAT_RULE_MARKER.as_ptr() as *const std::os::raw::c_void,
-            TS_NAT_RULE_MARKER.len() as u32,
-        );
+        set_rule_userdata(&rule, TS_NAT_RULE_MARKER);
     }
 
     debug!("Sending NAT rule to netfilter");
     send_rule(&mut socket, &rule).await?;
 
     info!("NAT rule created successfully");
+    Ok(())
+}
+
+async fn ensure_nat_table_and_chain_for_family(
+    socket: &mut netlink_sys::TokioSocket,
+    family: ProtoFamily,
+) -> anyhow::Result<()> {
+    let family_name = match family {
+        ProtoFamily::Ipv4 => "IPv4",
+        ProtoFamily::Ipv6 => "IPv6",
+        _ => "unknown",
+    };
+    info!(
+        "Ensuring {} nat table and POSTROUTING chain exist",
+        family_name
+    );
+
+    let mut batch = Batch::new();
+    let table = Table::new(&c"nat", family);
+    let mut chain = Chain::new(&c"POSTROUTING", &table);
+    chain.set_hook(nftnl::Hook::PostRouting, 100); // NF_INET_POST_ROUTING = 4, priority = 100 (NF_IP_PRI_NAT_SRC)
+    chain.set_policy(nftnl::Policy::Accept);
+    chain.set_type(nftnl::ChainType::Nat);
+    batch.add(&table, nftnl::MsgType::Add);
+    batch.add(&chain, nftnl::MsgType::Add);
+    let finalized_batch = batch.finalize();
+
+    let kernel_addr = SocketAddr::new(0, 0);
+    let bytes_sent = socket
+        .sendmsg(&finalized_batch, &kernel_addr)
+        .await
+        .context(format!(
+            "Failed to send {} table/chain creation batch",
+            family_name
+        ))?;
+
+    debug!("Sent {} bytes", bytes_sent);
+    info!("{} table and chain creation batch sent", family_name);
     Ok(())
 }
 
@@ -923,16 +1230,223 @@ async fn send_rule<'a>(
         .context("Failed to send batch to netfilter")?;
 
     debug!("Sent {} bytes", bytes_sent);
+
+    // The kernel doesn't send ACKs for successful batched operations (no NLM_F_ACK flag?),
+    // but it DOES send NLMSG_ERROR immediately if there's a problem. Check for errors
+    // with a short timeout to catch any immediate failures.
+    let timeout_duration = std::time::Duration::from_millis(100);
+    match tokio::time::timeout(timeout_duration, socket.recv_from_full()).await {
+        Ok(Ok((recv_buffer, _addr))) => {
+            debug!(
+                "Received response from kernel ({} bytes)",
+                recv_buffer.len()
+            );
+
+            // check if it's an error
+            unsafe {
+                let nlh = recv_buffer.as_ptr() as *const libc::nlmsghdr;
+                let remaining = recv_buffer.len() as i32;
+
+                if nlmsg_ok(nlh, remaining) {
+                    let nlmsg_type = (*nlh).nlmsg_type;
+
+                    if nlmsg_type == libc::NLMSG_ERROR as u16 {
+                        let err_msg = (nlh as *const u8).add(std::mem::size_of::<libc::nlmsghdr>())
+                            as *const libc::nlmsgerr;
+                        let error_code = (*err_msg).error;
+
+                        if error_code != 0 {
+                            error!("Kernel rejected NAT rule with error code: {}", error_code);
+                            anyhow::bail!(
+                                "Kernel rejected NAT rule: {} ({})",
+                                std::io::Error::from_raw_os_error(-error_code),
+                                error_code
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        Ok(Err(e)) => {
+            anyhow::bail!("Failed to receive response from kernel: {}", e);
+        }
+        Err(_) => {
+            // Timeout is expected - no error means success
+            debug!("No error response from kernel (success)");
+        }
+    }
+
     info!("NAT rule batch sent successfully");
     Ok(())
 }
 
-fn enable_ipv4_fwd() -> anyhow::Result<()> {
-    let mut f = File::create("/proc/sys/net/ipv4/ip_forward")
-        .with_context(|| "Failed to open /proc/sys/net/ipv4/ip_forward")?;
+fn enable_interface_forwarding(interface: &str) -> anyhow::Result<()> {
+    // Enable IPv4 forwarding on the specific interface
+    let ipv4_path = format!("/proc/sys/net/ipv4/conf/{}/forwarding", interface);
+    let mut f =
+        File::create(&ipv4_path).with_context(|| format!("Failed to open {}", ipv4_path))?;
     f.write_all(b"1")
-        .context("Failed to write to /proc/sys/net/ipv4/ip_forward")?;
-    info!("IPv4 forwarding enabled successfully");
+        .context("Failed to enable IPv4 forwarding")?;
+    info!("IPv4 forwarding enabled on {} interface", interface);
+
+    // Enable IPv6 forwarding on the specific interface
+    let ipv6_path = format!("/proc/sys/net/ipv6/conf/{}/forwarding", interface);
+    let mut f =
+        File::create(&ipv6_path).with_context(|| format!("Failed to open {}", ipv6_path))?;
+    f.write_all(b"1")
+        .context("Failed to enable IPv6 forwarding")?;
+    info!("IPv6 forwarding enabled on {} interface", interface);
+
+    Ok(())
+}
+
+async fn ensure_filter_table_and_chain(
+    socket: &mut netlink_sys::TokioSocket,
+    family: ProtoFamily,
+) -> anyhow::Result<()> {
+    let family_name = match family {
+        ProtoFamily::Ipv4 => "IPv4",
+        ProtoFamily::Ipv6 => "IPv6",
+        _ => "unknown",
+    };
+    info!(
+        "Ensuring {} filter table and FORWARD chain exist",
+        family_name
+    );
+
+    let mut batch = Batch::new();
+    let table = Table::new(&c"filter", family);
+    let mut chain = Chain::new(&c"FORWARD", &table);
+    chain.set_hook(nftnl::Hook::Forward, 0);
+    chain.set_policy(nftnl::Policy::Accept);
+    chain.set_type(nftnl::ChainType::Filter);
+    batch.add(&table, nftnl::MsgType::Add);
+    batch.add(&chain, nftnl::MsgType::Add);
+    let finalized_batch = batch.finalize();
+
+    let kernel_addr = SocketAddr::new(0, 0);
+    let bytes_sent = socket
+        .sendmsg(&finalized_batch, &kernel_addr)
+        .await
+        .context("Failed to send filter table/chain creation batch")?;
+
+    debug!("Sent {} bytes", bytes_sent);
+    info!("{} filter table and chain creation batch sent", family_name);
+    Ok(())
+}
+
+async fn create_forward_rules(interface: &str) -> anyhow::Result<()> {
+    let mut socket = create_netfilter_socket()?;
+
+    ensure_filter_table_and_chain(&mut socket, ProtoFamily::Ipv4).await?;
+    ensure_filter_table_and_chain(&mut socket, ProtoFamily::Ipv6).await?;
+
+    create_forward_rules_for_family(&mut socket, ProtoFamily::Ipv4, interface).await?;
+    create_forward_rules_for_family(&mut socket, ProtoFamily::Ipv6, interface).await?;
+
+    info!("FORWARD rules created successfully for {}", interface);
+    Ok(())
+}
+
+async fn create_forward_rules_for_family(
+    socket: &mut netlink_sys::TokioSocket,
+    family: ProtoFamily,
+    interface: &str,
+) -> anyhow::Result<()> {
+    let (family_name, proto_family, out_marker, in_marker) = match family {
+        ProtoFamily::Ipv4 => (
+            "IPv4",
+            libc::NFPROTO_IPV4 as u32,
+            TS_FORWARD_OUT_RULE_MARKER,
+            TS_FORWARD_IN_RULE_MARKER,
+        ),
+        ProtoFamily::Ipv6 => (
+            "IPv6",
+            libc::NFPROTO_IPV6 as u32,
+            TS_FORWARD6_OUT_RULE_MARKER,
+            TS_FORWARD6_IN_RULE_MARKER,
+        ),
+        _ => anyhow::bail!("Unsupported protocol family"),
+    };
+
+    let c_interface = CString::new(interface).unwrap();
+
+    info!("Creating {} FORWARD rules for {}", family_name, interface);
+
+    let table = Table::new(&c"filter", family);
+    let chain = Chain::new(&c"FORWARD", &table);
+
+    // Rule 1: Accept packets from interface (outbound from namespace)
+    let out_exists = check_rule_exists(
+        socket,
+        proto_family,
+        c"filter",
+        c"FORWARD",
+        out_marker,
+        &format!("{} FORWARD out", family_name),
+    )
+    .await?;
+
+    if !out_exists {
+        let mut rule_out = Rule::new(&chain);
+        rule_out.add_expr(&nft_expr!(meta iifname));
+        rule_out.add_expr(&nft_expr!(cmp == c_interface.as_bytes_with_nul()));
+        rule_out.add_expr(&nft_expr!(counter));
+        rule_out.add_expr(&nft_expr!(verdict accept));
+
+        // Add marker to rule 1
+        debug!(
+            "Setting {} FORWARD out marker: {:?}",
+            family_name,
+            std::str::from_utf8(out_marker).unwrap_or("?")
+        );
+        unsafe {
+            set_rule_userdata(&rule_out, out_marker);
+        }
+
+        send_rule(socket, &rule_out).await?;
+        info!("{} FORWARD out rule created", family_name);
+    } else {
+        info!("{} FORWARD out rule already exists", family_name);
+    }
+
+    // Rule 2: Accept RELATED,ESTABLISHED packets to interface (return traffic)
+    let in_exists = check_rule_exists(
+        socket,
+        proto_family,
+        c"filter",
+        c"FORWARD",
+        in_marker,
+        &format!("{} FORWARD in", family_name),
+    )
+    .await?;
+
+    if !in_exists {
+        // Use xt_match for iptables compatibility
+        let mut rule_in = Rule::new(&chain);
+        rule_in.add_expr(&nft_expr!(meta oifname));
+        rule_in.add_expr(&nft_expr!(cmp == c_interface.as_bytes_with_nul()));
+        rule_in.add_expr(&XtConntrack3::conntrack_state_established_related());
+        rule_in.add_expr(&nft_expr!(counter));
+        rule_in.add_expr(&nft_expr!(verdict accept));
+
+        // Add marker to rule 2
+        debug!(
+            "Setting {} FORWARD in marker: {:?}",
+            family_name,
+            std::str::from_utf8(in_marker).unwrap_or("?")
+        );
+        unsafe {
+            set_rule_userdata(&rule_in, in_marker);
+        }
+
+        send_rule(socket, &rule_in).await?;
+        info!("{} FORWARD in rule created", family_name);
+    } else {
+        info!("{} FORWARD in rule already exists", family_name);
+    }
+
+    info!("{} FORWARD rules created for {}", family_name, interface);
     Ok(())
 }
 
@@ -972,9 +1486,13 @@ pub async fn setup_interfaces() -> anyhow::Result<()> {
 
     info!("Setting up NAT for namespace traffic");
     create_nat_rule().await?;
+    create_nat6_rule().await?;
 
-    info!("Enabling IPv4 forwarding");
-    enable_ipv4_fwd()?;
+    info!("Enabling forwarding on {} interface", VETH_NAME_HOST);
+    enable_interface_forwarding(VETH_NAME_HOST)?;
+
+    info!("Creating FORWARD rules for {} interface", VETH_NAME_HOST);
+    create_forward_rules(VETH_NAME_HOST).await?;
 
     info!("Network interfaces setup completed successfully");
     Ok(())
