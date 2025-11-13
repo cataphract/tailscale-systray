@@ -2,6 +2,24 @@
 
 All notable changes to tailscale-systray will be documented in this file.
 
+## [0.3.0] - 2025-11-13
+
+### Added
+
+- **IPv6 support**: Network namespace now supports IPv6 traffic routing
+- **FORWARD iptables rules**: Added FORWARD chain rules for better traffic control in namespace mode
+- **CI/CD**: GitHub Actions workflow for automated release builds
+
+### Changed
+
+- Updated dependencies:
+  - Upgraded `nftnl` from 0.7.0 to 0.8.0
+  - General dependency updates across the project
+
+### Fixed
+
+- **ARM64 compatibility**: Fixed build issues on ARM64 architecture
+
 ## [0.2.1] - 2025-10-16
 
 ### Fixed
@@ -88,5 +106,7 @@ All notable changes to tailscale-systray will be documented in this file.
 - `env_logger` 0.11 and `log` 0.4 for logging
 - `users` 0.11 for user management
 
-[0.2.0]: https://github.com/cataphact/tailscale-systray/compare/v0.2.0
+[0.3.0]: https://github.com/cataphact/tailscale-systray/compare/v0.2.1...v0.3.0
+[0.2.1]: https://github.com/cataphact/tailscale-systray/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/cataphact/tailscale-systray/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/cataphact/tailscale-systray/releases/tag/v0.1.0
