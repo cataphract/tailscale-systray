@@ -851,7 +851,7 @@ async fn check_rule_exists(
 
         // Build netlink message header with GETRULE type and DUMP flag
         let nlh = sys::nftnl_nlmsg_build_hdr(
-            buffer.as_mut_ptr() as *mut i8,
+            buffer.as_mut_ptr() as *mut _,
             libc::NFT_MSG_GETRULE as u16,
             proto_family as u16,
             (libc::NLM_F_REQUEST | libc::NLM_F_DUMP) as u16,
