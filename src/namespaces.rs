@@ -451,7 +451,10 @@ fn setup_child_namespace(run_dir: &str, sync_pipe: i32) -> anyhow::Result<()> {
             c"".as_ptr(),
             libc::AT_FDCWD,
             c"/etc/resolv.conf".as_ptr(),
+            #[cfg(target_env = "gnu")]
             libc::MOVE_MOUNT_F_EMPTY_PATH,
+            #[cfg(not(target_env = "gnu"))]
+            0x00000004,
         )
     };
 
@@ -581,7 +584,16 @@ impl TokioSocketExt for TokioSocket {
                 msg.msg_name = addr as *const _ as *mut libc::c_void;
                 msg.msg_namelen = std::mem::size_of::<SocketAddr>() as u32;
                 msg.msg_iov = iovecs.as_ptr() as *mut libc::iovec;
-                msg.msg_iovlen = iovecs.len();
+
+                #[cfg(target_env = "musl")]
+                {
+                    msg.msg_iovlen = iovecs.len() as i32;
+                }
+
+                #[cfg(not(target_env = "musl"))]
+                {
+                    msg.msg_iovlen = iovecs.len();
+                }
 
                 let result = unsafe { libc::sendmsg(fd, &msg, 0) };
 
