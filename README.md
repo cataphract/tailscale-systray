@@ -1,6 +1,6 @@
 # Tailscale Systray
 
-A system tray application ([StatusNotifierItem](SNI)) for managing Tailscale VPN
+A system tray application ([StatusNotifierItem][SNI]) for managing Tailscale VPN
 connections on Linux systems.
 
 ## Features
@@ -19,6 +19,10 @@ connections on Linux systems.
 
 - Tailscale CLI installed
 - A Linux desktop environment with StatusNotifierItem support
+
+### Pre-built binaries
+
+Binaries are available in [GitHub releases][releases].
 
 ### From Source
 
@@ -43,6 +47,8 @@ Alternatively:
 cargo install tailscale-systray
 ~/.cargo/bin/tailscale-systray install
 ```
+
+Some native libraries (libmnl, libnftnl) are required.
 
 ## Usage
 
@@ -96,3 +102,4 @@ This project is licensed under the [MIT License](LICENSE).
 
 
 [SNI]: https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/
+[releases]: https://github.com/cataphract/tailscale-systray/releases
